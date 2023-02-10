@@ -21,17 +21,21 @@ class Multiplier(nn.Module):
 
 
 # Define the training loop
-def train(model, inputs, labels, criterion, optimizer, epochs):
+def train(model, data_loader, criterion, optimizer, epochs):
     best_loss = None
     for epoch in range(epochs):
-        # Forward pass
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
+        for i, (inputs_batch, targets_batch) in enumerate(data_loader):
+            # Zero the gradients
+            optimizer.zero_grad()
 
-        # Backward pass and optimization
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            # Forward pass
+            outputs = model(inputs_batch)
+            loss = criterion(outputs, targets_batch)
+
+            # Backward pass and optimization step
+            loss.backward()
+            optimizer.step()
+        print("Epoch: {}/{}, Loss: {:.4f}".format(epoch + 1, epochs, loss.item()))
 
         # Print the loss every 10 epochs
         if (epoch + 1) % 10 == 0:
@@ -67,23 +71,35 @@ def read_file(file_path):
     return inputs, outputs
 
 # Define the model, input size, hidden size, and output size
-model = Multiplier(2, 1024, 1)
+model = Multiplier(2, 128, 1)
 
 print("resuming from existing model in the workdir")
 model.load_state_dict(torch.load(os.path.join("out", 'model.pt')))
 
 input_size = 2
-hidden_size = 1024
+hidden_size = 128
 output_size = 1
+
+# Define the batch size and number of epochs
+batch_size = 50
+num_epochs = 60000
 
 # Define the loss function and the optimizer
 criterion = nn.MSELoss()
-optimizer = optim.SGD(model.parameters(), lr=0.01)
+optimizer = optim.SGD(model.parameters(), lr=0.05)
 
 # Define the training data
 inputs, outputs = read_file("multiplication-table.txt")
 inputs = torch.tensor(inputs, dtype=torch.float32)
 labels = torch.tensor(outputs, dtype=torch.float32)
 
+# Create a DataLoader to generate mini-batches
+data_loader = torch.utils.data.DataLoader(
+    torch.utils.data.TensorDataset(inputs, labels),
+    batch_size=batch_size,
+    shuffle=True
+)
+
+
 # Train the model
-train(model, inputs, labels, criterion, optimizer, epochs=600000)
+train(model, data_loader, criterion, optimizer, num_epochs)
