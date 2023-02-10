@@ -27,17 +27,19 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+
 # -----------------------------------------------------------------------------
 
 @dataclass
 class ModelConfig:
-    block_size: int = None # length of the input sequences of integers
-    vocab_size: int = None # the input integers are in range [0 .. vocab_size -1]
+    block_size: int = None  # length of the input sequences of integers
+    vocab_size: int = None  # the input integers are in range [0 .. vocab_size -1]
     # parameters below control the sizes of each model slightly differently
     n_layer: int = 4
     n_embd: int = 64
     n_embd2: int = 64
     n_head: int = 4
+
 
 # -----------------------------------------------------------------------------
 # Transformer Language Model (*exactly* as used in GPT-2)
@@ -47,8 +49,10 @@ class NewGELU(nn.Module):
     Implementation of the GELU activation function currently in Google BERT repo (identical to OpenAI GPT).
     Reference: Gaussian Error Linear Units (GELU) paper: https://arxiv.org/abs/1606.08415
     """
+
     def forward(self, x):
         return 0.5 * x * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
+
 
 class CausalSelfAttention(nn.Module):
     """
@@ -71,24 +75,25 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
 
     def forward(self, x):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k ,v  = self.c_attn(x).split(self.n_embd, dim=2)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
-        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
 
         # output projection
         y = self.c_proj(y)
         return y
+
 
 class Block(nn.Module):
     """ an unassuming Transformer block """
@@ -99,17 +104,18 @@ class Block(nn.Module):
         self.attn = CausalSelfAttention(config)
         self.ln_2 = nn.LayerNorm(config.n_embd)
         self.mlp = nn.ModuleDict(dict(
-            c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd),
-            c_proj  = nn.Linear(4 * config.n_embd, config.n_embd),
-            act     = NewGELU(),
+            c_fc=nn.Linear(config.n_embd, 4 * config.n_embd),
+            c_proj=nn.Linear(4 * config.n_embd, config.n_embd),
+            act=NewGELU(),
         ))
         m = self.mlp
-        self.mlpf = lambda x: m.c_proj(m.act(m.c_fc(x))) # MLP forward
+        self.mlpf = lambda x: m.c_proj(m.act(m.c_fc(x)))  # MLP forward
 
     def forward(self, x):
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlpf(self.ln_2(x))
         return x
+
 
 class Transformer(nn.Module):
     """ Transformer Language Model, exactly as seen in GPT-2 """
@@ -119,16 +125,16 @@ class Transformer(nn.Module):
         self.block_size = config.block_size
 
         self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
-            h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-            ln_f = nn.LayerNorm(config.n_embd),
+            wte=nn.Embedding(config.vocab_size, config.n_embd),
+            wpe=nn.Embedding(config.block_size, config.n_embd),
+            h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+            ln_f=nn.LayerNorm(config.n_embd),
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # report number of parameters (note we don't count the decoder parameters in lm_head)
         n_params = sum(p.numel() for p in self.transformer.parameters())
-        print("number of parameters: %.2fM" % (n_params/1e6,))
+        print("number of parameters: %.2fM" % (n_params / 1e6,))
 
     def get_block_size(self):
         return self.block_size
@@ -137,11 +143,11 @@ class Transformer(nn.Module):
         device = idx.device
         b, t = idx.size()
         assert t <= self.block_size, f"Cannot forward sequence of length {t}, block size is only {self.block_size}"
-        pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0) # shape (1, t)
+        pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # shape (1, t)
 
         # forward the GPT model itself
-        tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
+        tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
+        pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (1, t, n_embd)
         x = tok_emb + pos_emb
         for block in self.transformer.h:
             x = block(x)
@@ -154,6 +160,7 @@ class Transformer(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
 
         return logits, loss
+
 
 # -----------------------------------------------------------------------------
 # helper functions for evaluating and sampling from the model
@@ -189,16 +196,27 @@ def generate(model, idx, max_new_tokens, temperature=1.0, do_sample=False, top_k
 
     return idx
 
+
+def eval_expression(expression):
+    try:
+        expression = expression.replace("x", "*")
+        result = eval(expression.split("=")[0])
+        expected_result = int(expression.split("=")[1])
+        return result == expected_result
+    except:
+        return False
+
+
 def print_samples(num=10):
     """ samples from the model and pretty prints the decoded samples """
     X_init = torch.zeros(num, 1, dtype=torch.long).to(args.device)
     top_k = args.top_k if args.top_k != -1 else None
-    steps = train_dataset.get_output_length() - 1 # -1 because we already start with <START> token (index 0)
+    steps = train_dataset.get_output_length() - 1  # -1 because we already start with <START> token (index 0)
     X_samp = generate(model, X_init, steps, top_k=top_k, do_sample=True).to('cpu')
     train_samples, test_samples, new_samples = [], [], []
     for i in range(X_samp.size(0)):
         # get the i'th row of sampled integers, as python list
-        row = X_samp[i, 1:].tolist() # note: we need to crop out the first <START> token
+        row = X_samp[i, 1:].tolist()  # note: we need to crop out the first <START> token
         # token 0 is the <STOP> token, so we crop the output sequence at that point
         crop_index = row.index(0) if 0 in row else len(row)
         row = row[:crop_index]
@@ -210,12 +228,12 @@ def print_samples(num=10):
             test_samples.append(word_samp)
         else:
             new_samples.append(word_samp)
-    print('-'*80)
+    print('-' * 80)
     for lst, desc in [(train_samples, 'in train'), (test_samples, 'in test'), (new_samples, 'new')]:
         print(f"{len(lst)} samples that are {desc}:")
         for word in lst:
-            print(word)
-    print('-'*80)
+            print(f"{word}: {eval_expression(word)}")
+    print('-' * 80)
 
 @torch.inference_mode()
 def evaluate(model, dataset, batch_size=50, max_batches=None):
@@ -230,8 +248,9 @@ def evaluate(model, dataset, batch_size=50, max_batches=None):
         if max_batches is not None and i >= max_batches:
             break
     mean_loss = torch.tensor(losses).mean().item()
-    model.train() # reset model back to training mode
+    model.train()  # reset model back to training mode
     return mean_loss
+
 
 # -----------------------------------------------------------------------------
 # helper functions for creating the training and test Datasets that emit words
@@ -242,8 +261,8 @@ class CharDataset(Dataset):
         self.words = words
         self.chars = chars
         self.max_word_length = max_word_length
-        self.stoi = {ch:i+1 for i,ch in enumerate(chars)}
-        self.itos = {i:s for s,i in self.stoi.items()} # inverse mapping
+        self.stoi = {ch: i + 1 for i, ch in enumerate(chars)}
+        self.itos = {i: s for s, i in self.stoi.items()}  # inverse mapping
 
     def __len__(self):
         return len(self.words)
@@ -252,10 +271,10 @@ class CharDataset(Dataset):
         return word in self.words
 
     def get_vocab_size(self):
-        return len(self.chars) + 1 # all the possible characters and special 0 token
+        return len(self.chars) + 1  # all the possible characters and special 0 token
 
     def get_output_length(self):
-        return self.max_word_length + 1 # <START> token followed by words
+        return self.max_word_length + 1  # <START> token followed by words
 
     def encode(self, word):
         ix = torch.tensor([self.stoi[w] for w in word], dtype=torch.long)
@@ -270,20 +289,20 @@ class CharDataset(Dataset):
         ix = self.encode(word)
         x = torch.zeros(self.max_word_length + 1, dtype=torch.long)
         y = torch.zeros(self.max_word_length + 1, dtype=torch.long)
-        x[1:1+len(ix)] = ix
+        x[1:1 + len(ix)] = ix
         y[:len(ix)] = ix
-        y[len(ix)+1:] = -1 # index -1 will mask the loss at the inactive locations
+        y[len(ix) + 1:] = -1  # index -1 will mask the loss at the inactive locations
         return x, y
 
-def create_datasets(input_file):
 
+def create_datasets(input_file):
     # preprocessing of the input text file
     with open(input_file, 'r') as f:
         data = f.read()
     words = data.splitlines()
-    words = [w.strip() for w in words] # get rid of any leading or trailing white space
-    words = [w for w in words if w] # get rid of any empty strings
-    chars = sorted(list(set(''.join(words)))) # all the possible characters
+    words = [w.strip() for w in words]  # get rid of any leading or trailing white space
+    words = [w for w in words if w]  # get rid of any empty strings
+    chars = sorted(list(set(''.join(words))))  # all the possible characters
     max_word_length = max(len(w) for w in words)
     print(f"number of examples in the dataset: {len(words)}")
     print(f"max word length: {max_word_length}")
@@ -292,7 +311,7 @@ def create_datasets(input_file):
     print(''.join(chars))
 
     # partition the input data into a training and the test set
-    test_set_size = min(1000, int(len(words) * 0.1)) # 10% of the training set, or up to 1000 examples
+    test_set_size = min(1000, int(len(words) * 0.1))  # 10% of the training set, or up to 1000 examples
     rp = torch.randperm(len(words)).tolist()
     train_words = [words[i] for i in rp[:-test_set_size]]
     test_words = [words[i] for i in rp[-test_set_size:]]
@@ -303,6 +322,7 @@ def create_datasets(input_file):
     test_dataset = CharDataset(test_words, chars, max_word_length)
 
     return train_dataset, test_dataset
+
 
 class InfiniteDataLoader:
     """
@@ -318,10 +338,11 @@ class InfiniteDataLoader:
     def next(self):
         try:
             batch = next(self.data_iter)
-        except StopIteration: # this will technically only happen after 1e10 samples... (i.e. basically never)
+        except StopIteration:  # this will technically only happen after 1e10 samples... (i.e. basically never)
             self.data_iter = iter(self.train_loader)
             batch = next(self.data_iter)
         return batch
+
 
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
@@ -329,18 +350,23 @@ if __name__ == '__main__':
     # parse command line args
     parser = argparse.ArgumentParser(description="Make More")
     # system/input/output
-    parser.add_argument('--input-file', '-i', type=str, default='multiplication-table.txt', help="input file with things one per line")
+    parser.add_argument('--input-file', '-i', type=str, default='multiplication-table.txt',
+                        help="input file with things one per line")
     parser.add_argument('--work-dir', '-o', type=str, default='out', help="output working directory")
-    parser.add_argument('--resume', action='store_true', help="when this flag is used, we will resume optimization from existing model in the workdir")
+    parser.add_argument('--resume', action='store_true',
+                        help="when this flag is used, we will resume optimization from existing model in the workdir")
     parser.add_argument('--sample-only', action='store_true', help="just sample from the model and quit, don't train")
     parser.add_argument('--num-workers', '-n', type=int, default=4, help="number of data workers for both train/test")
-    parser.add_argument('--max-steps', type=int, default=-1, help="max number of optimization steps to run for, or -1 for infinite.")
-    parser.add_argument('--device', type=str, default='cpu', help="device to use for compute, examples: cpu|cuda|cuda:2|mps")
+    parser.add_argument('--max-steps', type=int, default=-1,
+                        help="max number of optimization steps to run for, or -1 for infinite.")
+    parser.add_argument('--device', type=str, default='cpu',
+                        help="device to use for compute, examples: cpu|cuda|cuda:2|mps")
     parser.add_argument('--seed', type=int, default=3407, help="seed")
     # sampling
     parser.add_argument('--top-k', type=int, default=-1, help="top-k for sampling, -1 means no top-k")
     # model
-    parser.add_argument('--type', type=str, default='transformer', help="model class type to use, bigram|mlp|rnn|gru|bow|transformer")
+    parser.add_argument('--type', type=str, default='transformer',
+                        help="model class type to use, bigram|mlp|rnn|gru|bow|transformer")
     parser.add_argument('--n-layer', type=int, default=4, help="number of layers")
     parser.add_argument('--n-head', type=int, default=4, help="number of heads (in a transformer)")
     parser.add_argument('--n-embd', type=int, default=64, help="number of feature channels in the model")
@@ -373,7 +399,7 @@ if __name__ == '__main__':
         raise ValueError(f'model type {args.type} is not recognized')
     model.to(args.device)
     print(f"model #params: {sum(p.numel() for p in model.parameters())}")
-    if args.resume or args.sample_only: # note: if we sample-only then we also assume we are resuming
+    if args.resume or args.sample_only:  # note: if we sample-only then we also assume we are resuming
         print("resuming from existing model in the workdir")
         model.load_state_dict(torch.load(os.path.join(args.work_dir, 'model.pt')))
     if args.sample_only:
@@ -381,10 +407,12 @@ if __name__ == '__main__':
         sys.exit()
 
     # init optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay, betas=(0.9, 0.99), eps=1e-8)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay,
+                                  betas=(0.9, 0.99), eps=1e-8)
 
     # init dataloader
-    batch_loader = InfiniteDataLoader(train_dataset, batch_size=args.batch_size, pin_memory=True, num_workers=args.num_workers)
+    batch_loader = InfiniteDataLoader(train_dataset, batch_size=args.batch_size, pin_memory=True,
+                                      num_workers=args.num_workers)
 
     # training loop
     best_loss = None
@@ -413,12 +441,12 @@ if __name__ == '__main__':
 
         # logging
         if step % 10 == 0:
-            print(f"step {step} | loss {loss.item():.4f} | step time {(t1-t0)*1000:.2f}ms")
+            print(f"step {step} | loss {loss.item():.4f} | step time {(t1 - t0) * 1000:.2f}ms")
 
         # evaluate the model
         if step > 0 and step % 500 == 0:
             train_loss = evaluate(model, train_dataset, batch_size=100, max_batches=10)
-            test_loss  = evaluate(model, test_dataset,  batch_size=100, max_batches=10)
+            test_loss = evaluate(model, test_dataset, batch_size=100, max_batches=10)
             writer.add_scalar("Loss/train", train_loss, step)
             writer.add_scalar("Loss/test", test_loss, step)
             writer.flush()
@@ -438,5 +466,3 @@ if __name__ == '__main__':
         # termination conditions
         if args.max_steps >= 0 and step >= args.max_steps:
             break
-
-
