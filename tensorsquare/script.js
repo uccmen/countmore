@@ -3,8 +3,13 @@
  * and cleaned of missing data.
  */
 async function getData() {
-  const squaresDataResponse = await fetch('https://raw.githubusercontent.com/uccmen/countmore/master/square-data.json');
+  const squaresDataResponse = await fetch('https://raw.githubusercontent.com/uccmen/countmore/master/square-data-6-16.json');
   const squaresData = await squaresDataResponse.json();
+  squaresData.map(squareData => {
+    if (squareData.squareOf < 6) {
+      console.log('SQUARE OF IS LESS THAN 6', squareData.squareOf);
+    }
+  });
 
   return squaresData;
 }
