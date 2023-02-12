@@ -3,8 +3,9 @@
  * and cleaned of missing data.
  */
 async function getData() {
-  const squaresDataResponse = await fetch('https://raw.githubusercontent.com/uccmen/countmore/master/random-upwards-data.json');
+  const squaresDataResponse = await fetch('https://raw.githubusercontent.com/uccmen/countmore/master/random-upwards-data-1.json');
   const squaresData = await squaresDataResponse.json();
+  console.log('DATA', squaresData);
 
   return squaresData;
 }
